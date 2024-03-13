@@ -45,6 +45,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def retry_n(func, params, n):
+    attempt_count = 1
+    while attempt_count < n:
+        try:
+            result = func(*params)
+            return result
+        except Exception as e:
+            attempt_count += 1
+            print(f"reattempting beautifulsoup call ({attempt_count}/{n})")
+            if attempt_count == n:
+                print(f"abandoning beautifulsoup call")
+                raise e
 
 class W3CMessageParserWarning(BaseException):
     """Base class for W3CMessageParser class specific exceptions"""
@@ -219,7 +231,7 @@ class W3CMailList(AbstractMailList):
             msg_parser = W3CMessageParser(
                 website=True,
             )
-            msgs = super().get_messages_from_urls(name, messages, msg_parser, fields)
+            msgs = retry_n(super().get_messages_from_urls, [name, messages, msg_parser, fields], 3)
         else:
             msgs = messages
         return cls(name, url, msgs)
@@ -254,7 +266,8 @@ class W3CMailList(AbstractMailList):
         # run through periods
         for period_url in W3CMailList.get_period_urls(url, select):
             # run through messages within period
-            for msg_url in get_message_urls_from_period_url(name, period_url):
+            msg_urls = retry_n(get_message_urls_from_period_url, [name, period_url], 3)
+            for msg_url in msg_urls:
                 msg_urls.append(msg_url)
         return msg_urls
 
@@ -271,7 +284,7 @@ class W3CMailList(AbstractMailList):
             - period, i.e. written in a certain year and month
         """
         # create dictionary with key indicating period and values the url
-        periods, urls_of_periods = cls.get_all_periods_and_their_urls(url)
+        periods, urls_of_periods = retry_n(cls.get_all_periods_and_their_urls, [url], 3)
 
         if any(period in list(select.keys()) for period in ["years", "months"]):
             for key, value in select.items():
@@ -310,7 +323,7 @@ class W3CMailList(AbstractMailList):
         # wait between loading messages, for politeness
         time.sleep(0.5)
         soup = get_website_content(url)
-        print("get_all_periods_and_their_urls:")
+        print("get_all_periods_and_their_urls (..):")
         print(url)
         periods = []
         urls_of_periods = []
@@ -416,13 +429,13 @@ class W3CMailListDomain(AbstractMailListDomain):
         only_mlist_urls: bool = True,
     ) -> "W3CMailListDomain":
         """Docstring in `AbstractMailListDomain`."""
-        lists = cls.get_lists_from_url(
+        lists = retry_n(cls.get_lists_from_url, [
             name,
             select,
             url_root,
             url_home,
             instant_save,
-            only_mlist_urls,
+            only_mlist_urls], 3
         )
         return cls.from_mailing_lists(
             name,
@@ -505,7 +518,7 @@ class W3CMailListDomain(AbstractMailListDomain):
             # collect mailing-list urls
             for mlist_url in tqdm(mlist_urls, ascii=True):
                 # check if mailing list contains messages in period
-                _period_urls = W3CMailList.get_all_periods_and_their_urls(mlist_url)[1]
+                _period_urls = retry_n(W3CMailList.get_all_periods_and_their_urls, [mlist_url], 3)[1]
                 # check if mailing list is public
                 if len(_period_urls) > 0:
                     archive.append(mlist_url)
