@@ -362,11 +362,14 @@ class AbstractMailList(ABC):
         # get all message contents
         msgs = []
         for msg_url in tqdm(msg_urls, ascii=True, desc=name):
-            msg = msg_parser.from_url(
-                list_name=name,
-                url=msg_url,
-                fields=fields,
-            )
+            try:
+                msg = msg_parser.from_url(
+                    list_name=name,
+                    url=msg_url,
+                    fields=fields,
+                )
+            except:
+                continue
             if msg.get_payload() == "RequestException":
                 time.sleep(30)
             else:
